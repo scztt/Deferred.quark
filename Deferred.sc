@@ -185,8 +185,7 @@ Deferred {
 			if (timeout.notNil) {
 				thisThread.clock.sched(timeout, {
 					if (resolved == \unresolved) {
-						waitingThreads = waitingThreads.remove(thisThread.threadPlayer);
-						DeferredTimeoutError().timeout_(timeout).throw();
+						this.error = DeferredTimeoutError().timeout_(timeout);
 					}
 				})
 			};
