@@ -27,7 +27,7 @@ Deferred {
 	}
 
 	wait {
-		|timeout=100|
+		|timeout|
 		this.prWait(timeout);
 
 		if (resolved == \error) {
