@@ -11,17 +11,6 @@ Deferred {
 		^d.using(func, clock)
 	}
 
-	*usingAll {
-		|all, timeout=100|
-		^Deferred.using({
-			all.collect {
-				|one|
-				one.wait(timeout);
-				one.value();
-			}
-		}, AppClock);
-	}
-
 	init {
 		waitingThreads = Array(2);
 	}
