@@ -189,15 +189,16 @@ Deferred {
 				})
 			};
 
-			\hang.yield;
+			while { resolved == \unresolved } {
+				\hang.yield;
+			};
+
+			waitingThreads = waitingThreads.remove(thisThread.threadPlayer);
 		}
 	}
 
 	prResume {
-		var time = thisThread.seconds;
-		var tempWaitingThreads = waitingThreads;
-		waitingThreads = nil;
-		tempWaitingThreads.do {
+		waitingThreads.do {
 			|thread|
 			thread.clock.sched(0, thread);
 		};
