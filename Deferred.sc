@@ -20,6 +20,10 @@ Deferred {
 		waitingThreads = Array(2);
 	}
 
+	asDeferred {
+		^this
+	}
+
 	wait {
 		|timeout|
 		this.prWait(timeout);
@@ -237,6 +241,14 @@ DeferredTimeoutError : Error  {
 
 	errorString {
 		^"Timed out waiting for Deferred after % seconds.".format(timeout)
+	}
+}
+
++Object {
+	// Interpretation: if we have a normal object and need a deferred, just
+	// construct an already-resolved Deferred.
+	asDeferred {
+		^Deferred.newResolved(this)
 	}
 }
 
