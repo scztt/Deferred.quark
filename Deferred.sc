@@ -97,6 +97,10 @@ Deferred {
 			try {
 				funcResult = function.value(this);
 
+				if (funcResult.isKindOf(Deferred)) {
+					funcResult = funcResult.wait();
+				};
+
 				// gotcha: returning an Exception from a function wrapped in a try effectively throws.
 				nil;
 			} {
