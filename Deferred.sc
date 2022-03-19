@@ -17,7 +17,7 @@ Deferred {
 	}
 
 	init {
-		waitingThreads = Array(2);
+		waitingThreads = Array(1);
 	}
 
 	asDeferred {
