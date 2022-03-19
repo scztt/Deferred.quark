@@ -125,25 +125,17 @@ Deferred {
 
 	then {
 		|valueFunc, errorFunc, clock|
-		var newDeferred, result, errResult;
+		var newDeferred, result, errResult, handleFunc;
 		// If not specified, just default to returning / rethrowing whatevers passed in
 		valueFunc = valueFunc ? { |v| v };
 		errorFunc = errorFunc ? { |v| v.throw; };
 
 		newDeferred = Deferred();
 
-		{
-			this.prWait;
-
+		handleFunc = {
 			if (this.hasValue) {
 				newDeferred.using({
-					result = valueFunc.value(this.value);
-
-					if (result.isKindOf(Deferred)) {
-						result = result.wait();
-					};
-
-					result
+					valueFunc.value(this.value);
 				})
 			} {
 				// SUBTLE: If we throw in value-handling code, it's turned into an error.
@@ -153,18 +145,23 @@ Deferred {
 				errResult = errorFunc.value(this.error);
 
 				newDeferred.using({
-					if (errResult.isKindOf(Deferred)) {
-						errResult = errResult.wait();
-					};
-
 					if (errResult.isKindOf(Exception)) {
 						errResult.throw;
-					};
-
-					errResult;
-				});
+					} {
+						errResult;
+					}
+				})
 			}
-		}.fork(clock ?? thisThread.clock);
+		};
+
+		if (this.isResolved) {
+			handleFunc.()
+		} {
+			{
+				this.prWait;
+				handleFunc.();
+			}.fork(clock ?? thisThread.clock);
+		};
 
 		^newDeferred
 	}
