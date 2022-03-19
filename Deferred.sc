@@ -11,6 +11,11 @@ Deferred {
 		^d.using(func, clock)
 	}
 
+	*newResolved {
+		|value|
+		^this.new.value_(value)
+	}
+
 	init {
 		waitingThreads = Array(2);
 	}
