@@ -184,7 +184,7 @@ Deferred {
 			if (timeout.notNil) {
 				thisThread.clock.sched(timeout, {
 					if (resolved == \unresolved) {
-						this.error = DeferredTimeoutError().timeout_(timeout);
+						this.error = DeferredTimeoutError(value, error).timeout_(timeout);
 					}
 				})
 			};
@@ -211,15 +211,13 @@ Deferred {
 }
 
 ResettingDeferredValueError : Error {
-	var value, error;
+	var <>value, <>error;
 
 	*new {
 		|value, error|
-		^super.newCopyArgs(value, error);
-	}
-
-	errorString {
-		^"Setting a Deferred value after the value has already been set. (value:%, error:%)".format(value, error)
+		^super.new(
+			"Setting a Deferred value after the value has already been set. (value:%, error:%)".format(value, error)
+		).value_(value).error_(error);
 	}
 }
 
