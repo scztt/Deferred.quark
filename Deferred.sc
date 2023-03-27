@@ -193,7 +193,7 @@ Deferred {
 				\hang.yield;
 			};
 
-			waitingThreads = waitingThreads.remove(thisThread.threadPlayer);
+			waitingThreads.remove(thisThread.threadPlayer);
 		}
 	}
 
