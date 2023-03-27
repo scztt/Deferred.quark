@@ -126,6 +126,8 @@ Deferred {
 	then {
 		|valueFunc, errorFunc, clock|
 		var newDeferred, result, errResult, handleFunc;
+
+		clock = clock ?? { thisThread.clock };
 		// If not specified, just default to returning / rethrowing whatevers passed in
 		valueFunc = valueFunc ? { |v| v };
 		errorFunc = errorFunc ? { |v| v.throw; };
@@ -136,7 +138,7 @@ Deferred {
 			if (this.hasValue) {
 				newDeferred.using({
 					valueFunc.value(this.value);
-				})
+				}, clock)
 			} {
 				// SUBTLE: If we throw in value-handling code, it's turned into an error.
 				// If we throw during ERROR-handling code, we immediately fail and don't
@@ -150,7 +152,7 @@ Deferred {
 					} {
 						errResult;
 					}
-				})
+				}, clock)
 			}
 		};
 
