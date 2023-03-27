@@ -208,6 +208,20 @@ Deferred {
 		|stream|
 		stream << "Deferred(%)".format(this.identityHash);
 	}
+
+	dump {
+		this.postln;
+		"  hasValue = %".format(this.hasValue).postln;
+		"  hasError = %".format(this.hasError).postln;
+		"  isResolved = %".format(this.isResolved).postln;
+		if (this.hasValue) {
+			"  value = %".format(this.value).postln;
+		};
+		if (this.hasError) {
+			"  error = %".format(this.error).postln;
+		};
+		"  waiting thread count = %".format(waitingThreads.size).postln;
+	}
 }
 
 ResettingDeferredValueError : Error {
