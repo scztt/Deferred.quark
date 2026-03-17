@@ -1,0 +1,449 @@
+TITLE:: Deferred
+summary:: A promise-like container for values that will be available in the future
+categories:: Scheduling
+related:: Classes/Condition, Classes/Routine
+
+DESCRIPTION::
+Deferred is a promise-like object that represents a value which may not yet be available. It allows you to write asynchronous code in a synchronous style by suspending a thread until a value (or error) is provided.
+
+A Deferred can be in one of three states:
+LIST::
+## strong::unresolved:: - no value or error has been set yet
+## strong::value:: - a value has been set
+## strong::error:: - an error has been set
+::
+
+Once resolved (either with a value or an error), a Deferred cannot be changed.
+
+The simplest usage is to create a Deferred, pass it to an asynchronous operation, and then wait for the result:
+
+code::
+(
+fork {
+	var d = Deferred();
+
+	// resolve it from another thread after a delay
+	{ d.value = 42 }.defer(0.5);
+
+	// this suspends the current thread until the value is set
+	d.wait.postln; // -> 42
+};
+)
+::
+
+link::#*using:: is the most common way to create a Deferred. It runs a function in a Routine and resolves the Deferred with the return value (or any thrown error):
+
+code::
+(
+fork {
+	var d = Deferred.using {
+		1.0.wait;
+		"done"
+	};
+
+	d.wait.postln; // -> "done" (after 1 second)
+};
+)
+::
+
+Deferred supports chaining via link::#-then::, which returns a new Deferred whose value is the result of a callback applied to the first Deferred's value:
+
+code::
+(
+fork {
+	var result = Deferred.using { 10 }
+		.then { |v| v * 2 }
+		.then { |v| v + 1 };
+
+	result.wait.postln; // -> 21
+};
+)
+::
+
+Any object can be converted to an already-resolved Deferred via code::asDeferred:::
+
+code::
+100.asDeferred.wait; // -> 100
+::
+
+SUBSECTION:: Extension methods
+
+Deferred also provides convenience methods on several core classes to wrap common asynchronous server operations. These return a Deferred that resolves when the server confirms the operation is complete:
+
+code::
+(
+fork {
+	Server.default.doBoot.wait;
+
+	SynthDef(\test, { |out, freq=440|
+		Out.ar(out, SinOsc.ar(freq) * 0.1 ! 2)
+	}).doAdd.wait;
+
+	var synth = Synth.doNew(\test, [\freq, 880]).wait;
+	// synth is guaranteed to be running on the server
+
+	1.0.wait;
+	synth.free;
+};
+)
+::
+
+CLASSMETHODS::
+
+METHOD:: new
+Create a new unresolved Deferred.
+
+code::
+d = Deferred();
+::
+
+METHOD:: using
+Create a new Deferred and resolve it with the return value of code::func::. If code::func:: throws an error, the Deferred is resolved with that error. If code::func:: returns another Deferred, waits for that Deferred's value.
+
+ARGUMENT:: func
+A function to execute. Receives the Deferred as its first argument.
+
+ARGUMENT:: clock
+Clock to run the function on. Defaults to the current thread's clock.
+
+code::
+(
+fork {
+	var d = Deferred.using { |d|
+		0.5.wait;
+		"hello"
+	};
+	d.wait.postln; // -> "hello"
+};
+)
+::
+
+METHOD:: serverSync
+Create a Deferred that runs code::func::, then waits for the server to complete all pending async commands before resolving. Useful for operations that allocate server-side resources.
+
+ARGUMENT:: func
+A function to execute.
+
+ARGUMENT:: server
+Server to sync with. Defaults to code::Server.default::.
+
+code::
+(
+fork {
+	Deferred.serverSync {
+		SynthDef(\test, { Out.ar(0, SinOsc.ar(440) * 0.1) }).add;
+	}.wait;
+	// SynthDef is guaranteed to be on the server
+};
+)
+::
+
+METHOD:: newResolved
+Create a Deferred that is already resolved with the given value.
+
+ARGUMENT:: value
+The value to resolve with.
+
+code::
+Deferred.newResolved(42).wait; // -> 42
+::
+
+
+INSTANCEMETHODS::
+
+METHOD:: wait
+Suspend the current thread until this Deferred is resolved. Returns the value if resolved with a value, or throws the error if resolved with an error.
+
+ARGUMENT:: timeout
+Optional timeout in seconds. If the Deferred is not resolved within this time, a link::Classes/DeferredTimeoutError:: is thrown.
+
+code::
+(
+fork {
+	var d = Deferred();
+	{ d.value = "result" }.defer(0.1);
+	d.wait.postln; // -> "result"
+};
+)
+
+// with timeout
+(
+fork {
+	var d = Deferred();
+	try {
+		d.wait(0.5);
+	} {
+		|err|
+		err.postln; // -> DeferredTimeoutError
+	};
+};
+)
+::
+
+METHOD:: value
+When used as a getter, returns the resolved value. Throws link::Classes/AccessingDeferredValueError:: if unresolved, or re-throws the error if resolved with an error.
+
+When used as a setter, resolves the Deferred with the given value and resumes all waiting threads. Throws link::Classes/ResettingDeferredValueError:: if already resolved.
+
+ARGUMENT:: inValue
+The value to resolve with (setter only).
+
+code::
+(
+var d = Deferred();
+d.value = 42;
+d.value.postln; // -> 42
+)
+::
+
+METHOD:: error
+When used as a getter, returns the stored error (or nil if none).
+
+When used as a setter, resolves the Deferred with an error and resumes all waiting threads. Any thread that calls code::wait:: will have this error thrown. Throws link::Classes/ResettingDeferredValueError:: if already resolved.
+
+ARGUMENT:: inError
+The error to resolve with (setter only).
+
+code::
+(
+fork {
+	var d = Deferred();
+	{ d.error = Error("something went wrong") }.defer(0.1);
+	try {
+		d.wait;
+	} {
+		|err|
+		err.errorString.postln;
+	};
+};
+)
+::
+
+METHOD:: then
+Register callbacks that are called when the Deferred resolves. Returns a new Deferred that resolves with the return value of the callback.
+
+If the Deferred resolves with a value, code::valueFunc:: is called. If it resolves with an error, code::errorFunc:: is called. If code::errorFunc:: returns a non-Exception value, the returned Deferred resolves with that value (error recovery). If it returns an Exception, the returned Deferred resolves with that error.
+
+ARGUMENT:: valueFunc
+Function called with the resolved value. Defaults to the identity function.
+
+ARGUMENT:: errorFunc
+Function called with the error. Defaults to re-throwing the error.
+
+ARGUMENT:: clock
+Clock to run callbacks on. Defaults to the current thread's clock.
+
+ARGUMENT:: timeout
+Optional timeout in seconds for waiting on this Deferred.
+
+code::
+(
+fork {
+	// chaining
+	var result = Deferred.using { 10 }
+		.then { |v| v * 2 }
+		.then { |v| v + 5 };
+	result.wait.postln; // -> 25
+};
+)
+
+// error handling
+(
+fork {
+	var result = Deferred.using { Error("oops").throw }
+		.then(
+			valueFunc: { |v| "got: %".format(v) },
+			errorFunc: { |e| "recovered" }   // recover from error
+		);
+	result.wait.postln; // -> "recovered"
+};
+)
+::
+
+METHOD:: onValue
+Register a callback that fires only when the Deferred resolves with a value. Does not return a new Deferred.
+
+ARGUMENT:: function
+Function called with the resolved value.
+
+ARGUMENT:: clock
+Clock to run the callback on.
+
+code::
+(
+var d = Deferred();
+d.onValue { |v| "got: %".format(v).postln };
+d.value = 42; // prints "got: 42"
+)
+::
+
+METHOD:: onError
+Register a callback that fires only when the Deferred resolves with an error. Does not return a new Deferred.
+
+ARGUMENT:: function
+Function called with the error.
+
+ARGUMENT:: clock
+Clock to run the callback on.
+
+METHOD:: using
+Run a function and resolve this Deferred with its return value (or any thrown error). If the function returns another Deferred, waits for that Deferred to resolve first.
+
+ARGUMENT:: function
+The function to execute. Receives this Deferred as its argument.
+
+ARGUMENT:: clock
+Clock to run on. Defaults to the current thread's clock.
+
+ARGUMENT:: fork
+If true, always forks a new thread. If false (default), uses code::forkIfNeeded:: which reuses the current thread if already on the correct clock.
+
+METHOD:: done
+Post the resolved value to the post window, or throw the error if resolved with an error. Useful for debugging.
+
+METHOD:: valueCallback
+Returns a function that, when called with a value, resolves this Deferred. Useful for bridging callback-based APIs.
+
+code::
+(
+var d = Deferred();
+var callback = d.valueCallback;
+// pass callback to some async API
+callback.value(42);
+d.value.postln; // -> 42
+)
+::
+
+METHOD:: errorCallback
+Returns a function that, when called with an error, resolves this Deferred with that error. Useful for bridging callback-based APIs.
+
+METHOD:: completionMsg
+Generate an OSC completion message (code::\sync::) that resolves this Deferred when the server sends its reply. The resolved value is the elapsed time in seconds.
+
+ARGUMENT:: server
+Server to listen on. Defaults to code::Server.default::.
+
+returns:: An OSC message array code::[\sync, id]:: suitable for use as a completion message.
+
+METHOD:: hasValue
+returns:: code::true:: if this Deferred has been resolved with a value.
+
+METHOD:: hasError
+returns:: code::true:: if this Deferred has been resolved with an error.
+
+METHOD:: isResolved
+returns:: code::true:: if this Deferred has been resolved (with either a value or an error).
+
+METHOD:: asDeferred
+returns:: code::this::. Allows Deferred to be used polymorphically with code::Object:asDeferred::.
+
+METHOD:: dump
+Post a summary of this Deferred's state to the post window, including resolution status, value/error, and the number of waiting threads.
+
+
+EXAMPLES::
+
+SUBSECTION:: Basic usage
+
+code::
+// Create, resolve, and wait
+(
+fork {
+	var d = Deferred();
+	{ d.value = "hello" }.defer(0.5);
+	d.wait.postln; // -> "hello" (after 0.5 seconds)
+};
+)
+::
+
+SUBSECTION:: Deferred.using with error handling
+
+code::
+(
+fork {
+	var d = Deferred.using {
+		0.2.wait;
+		if(0.5.coin) {
+			"success"
+		} {
+			Error("failure").throw
+		};
+	};
+
+	try {
+		d.wait.postln;
+	} {
+		|err|
+		"Caught: %".format(err.errorString).postln;
+	};
+};
+)
+::
+
+SUBSECTION:: Chaining with then
+
+code::
+(
+fork {
+	var result = Deferred.using { 5 }
+		.then { |v| v * 10 }
+		.then { |v| v.asString ++ " items" };
+
+	result.wait.postln; // -> "50 items"
+};
+)
+::
+
+SUBSECTION:: Bridging callback APIs with valueCallback
+
+code::
+(
+fork {
+	var buf, d = Deferred();
+	// Buffer.read uses a callback - bridge it with valueCallback
+	Buffer.read(s, Platform.resourceDir +/+ "sounds/a11wlk01.wav",
+		action: d.valueCallback);
+	buf = d.wait;
+	"Loaded buffer: % frames, % channels".format(
+		buf.numFrames, buf.numChannels
+	).postln;
+};
+)
+::
+
+SUBSECTION:: Timeout
+
+code::
+(
+fork {
+	var d = Deferred();
+	// never resolved — will timeout
+	try {
+		d.wait(1.0);
+	} {
+		|err|
+		"Timed out: %".format(err.errorString).postln;
+	};
+};
+)
+::
+
+SUBSECTION:: Nested Deferreds
+
+If a code::using:: function returns another Deferred, the outer Deferred waits for the inner one to resolve:
+
+code::
+(
+fork {
+	var d = Deferred.using {
+		0.1.wait;
+		// return an inner Deferred
+		Deferred.using {
+			0.1.wait;
+			"nested result"
+		}
+	};
+	d.wait.postln; // -> "nested result"
+};
+)
+::
